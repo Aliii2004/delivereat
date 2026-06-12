@@ -137,6 +137,7 @@ export const refreshToken = async (
         throw new AppError('Refresh token yaroqsiz', 401);
       }
       // Legacy plain token saqlangan bo'lsa, bir martalik migratsiya qilib hash ko'rinishga o'tkazamiz
+      console.warn(`Legacy refresh token upgraded for user ${payload.userId}`);
       await redisService.set(
         `refresh:${payload.userId}`,
         hashedIncomingToken,

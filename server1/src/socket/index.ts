@@ -143,7 +143,7 @@ export const initSocket = (httpServer: HTTPServer): SocketServer => {
         });
 
         if (!assignedOrder) {
-          socket.emit('error', { message: 'Bu buyurtmaga joylashuv yuborishga ruxsat yo\'q' });
+          socket.emit('error', { message: "Bu buyurtmaga joylashuv yuborishga ruxsat yo'q" });
           return;
         }
 
