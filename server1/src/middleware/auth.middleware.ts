@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt';
 import { redisService } from '../services/redis.service';
+import { AppError } from './errorHandler';
 
-// Express Request ga user qo'shish
+// ─── JWT PAYLOAD EXTENSION ─────────────────────────────────
 declare global {
   namespace Express {
     interface Request {
@@ -15,6 +16,7 @@ declare global {
   }
 }
 
+// ─── AUTHENTICATE: TOKEN VERIFY ────────────────────────────
 export const authenticate = async (
   req: Request,
   res: Response,
@@ -24,36 +26,41 @@ export const authenticate = async (
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'Token topilmadi' });
+      throw new AppError('Token topilmadi', 401);
     }
 
     const token = authHeader.split(' ')[1];
 
-    // Redis blacklist tekshirish (logout qilingan tokenlar)
+    // Blacklist tekshirish (logout qilinganmi?)
     const isBlacklisted = await redisService.isTokenBlacklisted(token);
     if (isBlacklisted) {
-      return res.status(401).json({ message: 'Token yaroqsiz' });
+      throw new AppError('Token bekor qilindi', 401);
     }
 
-    // JWT verify
+    // Token verify
     const payload = verifyAccessToken(token);
     req.user = payload;
 
     next();
   } catch (error) {
-    return res.status(401).json({ message: 'Token noto\'g\'ri yoki muddati o\'tgan' });
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    return res.status(401).json({ message: 'Token noto\'g\'ri' });
   }
 };
 
-// Role tekshirish middleware
-export const authorize = (...roles: string[]) => {
+// ─── AUTHORIZE: ROLE CHECK ─────────────────────────────────
+export const authorize = (...allowedRoles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ message: 'Autentifikatsiya talab qilinadi' });
+      return res.status(401).json({ message: 'Token topilmadi' });
     }
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: 'Ruxsat yo\'q' });
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Bu operatsiyaga ruxsat yo\'q' });
     }
+
     next();
   };
 };

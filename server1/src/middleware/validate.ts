@@ -1,22 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
+import { AppError } from './errorHandler';
 
-// express-validator natijalarini bir joyda tekshirish
-// Har bir routes da takrorlamay, bitta middleware sifatida ishlatiladi
-export const validate = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const validate = (req: Request, res: Response, next: NextFunction) => {
   const errors = validationResult(req);
+
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      message: 'Validation xatosi',
-      errors: errors.array().map((e) => ({
-        field: e.type === 'field' ? e.path : 'unknown',
-        message: e.msg,
-      })),
-    });
+    const messages = errors.array().map((e) => e.msg).join(', ');
+    throw new AppError(messages, 400);
   }
+
   next();
 };

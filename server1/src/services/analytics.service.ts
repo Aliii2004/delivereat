@@ -1,25 +1,49 @@
 import axios from 'axios';
 
-const SERVER2_URL = process.env.SERVER2_INTERNAL_URL || 'http://server2:8000';
-const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || '';
-
-// Buyurtma yakunlanganda S2 ga xabar berish
-export const notifyOrderCompleted = async (data: {
+interface OrderCompletedData {
   orderId: string;
   restaurantId: string;
   courierId: string;
   totalAmount: number;
-  deliveryTime: number; // daqiqada
-}) => {
+  deliveryTime: number;
+}
+
+/**
+ * Отправить webhook на Server 2 для аналитики
+ * Это резервный способ синхронной доставки данных
+ */
+export const notifyOrderCompleted = async (data: OrderCompletedData): Promise<void> => {
   try {
-    await axios.post(`${SERVER2_URL}/internal/order-completed`, data, {
-      timeout: 3000, // 3 sek timeout — S2 sekin bo'lsa S1 ni bloklamas
-      headers: {
-        'X-Internal-Secret': INTERNAL_SECRET,
+    const server2Url = process.env.SERVER2_URL || 'http://localhost:8000';
+    const internalSecret = process.env.INTERNAL_API_SECRET || '';
+
+    if (!internalSecret) {
+      console.warn('INTERNAL_API_SECRET не установлен, webhook не отправлен');
+      return;
+    }
+
+    const response = await axios.post(
+      `${server2Url}/internal/order-completed`,
+      {
+        orderId: data.orderId,
+        restaurantId: data.restaurantId,
+        courierId: data.courierId,
+        totalAmount: data.totalAmount,
+        deliveryTime: data.deliveryTime,
       },
-    });
+      {
+        headers: {
+          'X-Internal-Secret': internalSecret,
+          'Content-Type': 'application/json',
+        },
+        timeout: 5000,
+      }
+    );
+
+    console.log(`✓ Analytics webhook sent for order ${data.orderId}`);
+    return response.data;
   } catch (error) {
-    // Analytics xatosi asosiy jarayonni to'xtatmasin
-    console.error('Analytics notification failed (non-critical):', error);
+    console.error('Analytics webhook error:', error);
+    // Не выбрасываем ошибку — Redis Pub/Sub уже отправил данные
   }
 };

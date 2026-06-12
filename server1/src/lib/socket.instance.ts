@@ -1,15 +1,14 @@
 import { Server as SocketServer } from 'socket.io';
 
-// Circular dependency muammosini hal qiladi.
-// order.controller, courier.controller va boshqalar
-// shu fayldan import qiladi — index.ts dan emas.
-let io: SocketServer;
+let ioInstance: SocketServer | null = null;
 
-export const setIO = (instance: SocketServer) => {
-  io = instance;
+export const setIO = (io: SocketServer): void => {
+  ioInstance = io;
 };
 
 export const getIO = (): SocketServer => {
-  if (!io) throw new Error('Socket.io hali ishga tushmagan');
-  return io;
+  if (!ioInstance) {
+    throw new Error('Socket.io initialized emas!');
+  }
+  return ioInstance;
 };
