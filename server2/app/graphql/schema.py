@@ -1,110 +1,65 @@
-import os
-from typing import Optional, Any
-
+from typing import List, Optional
 import strawberry
-from strawberry.fastapi import GraphQLRouter
-from strawberry.types import Info
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import AsyncGenerator
+from datetime import datetime
 
-from app.database import AsyncSessionLocal
-from app.services.stats_service import StatsService
-from app.graphql.types import (
-    RestaurantStatsType,
-    BurndownPoint,
-    CourierPerformanceType,
-    OrderEventType,
-    MutationResult,
-)
+@strawberry.type
+class MenuItemStat:
+    name: str
+    sold_count: int
+    revenue: float
 
+@strawberry.type
+class RestaurantStatsType:
+    total_revenue: float
+    total_orders: int
+    average_order_value: float
+    completion_rate: float
+    average_rating: float
+    top_menu_items: List[MenuItemStat]
 
-# ─── CONTEXT ───────────────────────────────────────────────
-# FIX: Dependency injection bilan to'g'ri session management
+@strawberry.type
+class BurndownPoint:
+    date: str
+    order_count: int
+    revenue: float
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    GraphQL resolver uchun DB session.
-    Har bir so'rovda yangi session ochiladi va to'g'ri close qilinadi.
-    """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+@strawberry.type
+class CourierPerformanceType:
+    total_deliveries: int
+    total_earnings: float
+    average_delivery_time: float
+    rating: float
+    acceptance_rate: float
 
-
-# ─── QUERY ─────────────────────────────────────────────────
+@strawberry.type
+class OrderEventType:
+    order_id: str
+    type: str
+    total_amount: float
+    delivery_time: Optional[int] = None
+    timestamp: str = ""
 
 @strawberry.type
 class Query:
+    @strawberry.field
+    async def restaurant_stats(self, restaurant_id: str, days: int = 30) -> RestaurantStatsType:
+        """Получить статистику ресторана"""
+        # Это будет реализовано в resolvers.py
+        pass
 
-    @strawberry.field(description="Restoran statistikasi (default: so'nggi 30 kun)")
-    async def restaurant_stats(
-        self,
-        restaurant_id: str,
-        days: Optional[int] = 30,
-    ) -> RestaurantStatsType:
-        # FIX: Har bir resolver o'z sessiyasini ochadi
-        async with AsyncSessionLocal() as db:
-            service = StatsService(db)
-            data = await service.get_restaurant_stats(restaurant_id, days or 30)
-            await db.commit()
-            return RestaurantStatsType(**data)
+    @strawberry.field
+    async def courier_performance(self, courier_id: str, days: int = 30) -> CourierPerformanceType:
+        """Получить производительность курьера"""
+        pass
 
-    @strawberry.field(description="Kun bo'yicha burndown chart ma'lumotlari")
-    async def burndown_chart(
-        self,
-        restaurant_id: str,
-        days: Optional[int] = 14,
-    ) -> list[BurndownPoint]:
-        async with AsyncSessionLocal() as db:
-            service = StatsService(db)
-            data = await service.get_burndown(restaurant_id, days or 14)
-            await db.commit()
-            return [BurndownPoint(**item) for item in data]
+    @strawberry.field
+    async def burndown_chart(self, restaurant_id: str, days: int = 14) -> List[BurndownPoint]:
+        """Получить burndown chart"""
+        pass
 
-    @strawberry.field(description="Kuryer samaradorlik hisoboti")
-    async def courier_performance(
-        self,
-        courier_id: str,
-        days: Optional[int] = 30,
-    ) -> CourierPerformanceType:
-        async with AsyncSessionLocal() as db:
-            service = StatsService(db)
-            data = await service.get_courier_performance(courier_id, days or 30)
-            await db.commit()
-            return CourierPerformanceType(**data)
+    @strawberry.field
+    async def recent_events(self, restaurant_id: str, limit: int = 20) -> List[OrderEventType]:
+        """Получить последние события"""
+        pass
 
-    @strawberry.field(description="So'nggi hodisalar ro'yxati")
-    async def recent_events(
-        self,
-        restaurant_id: str,
-        limit: Optional[int] = 20,
-    ) -> list[OrderEventType]:
-        async with AsyncSessionLocal() as db:
-            service = StatsService(db)
-            data = await service.get_recent_events(restaurant_id, limit or 20)
-            await db.commit()
-            return [OrderEventType(**item) for item in data]
-
-
-# ─── MUTATION ──────────────────────────────────────────────
-
-@strawberry.type
-class Mutation:
-    @strawberry.mutation(description="Health check — server2 ishlayotganini tekshirish")
-    async def ping(self) -> MutationResult:
-        return MutationResult(success=True, message="pong")
-
-
-# ─── SCHEMA ────────────────────────────────────────────────
-
-schema = strawberry.Schema(query=Query, mutation=Mutation)
-
-# FIX: GraphQLRouter — context endi kerak emas (har resolver o'z sessiyasini ochadi)
-graphql_router = GraphQLRouter(
-    schema,
-    graphiql=os.environ.get("NODE_ENV") != "production",
-)
+schema = strawberry.Schema(query=Query)
