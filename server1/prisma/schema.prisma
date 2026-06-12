@@ -1,0 +1,272 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ─────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  RESTAURANT_OWNER
+  COURIER
+  ADMIN
+}
+
+enum RestaurantStatus {
+  OPEN
+  CLOSED
+  BUSY
+}
+
+enum OrderStatus {
+  CONFIRMED    // Buyurtma yaratildi, restoran kutmoqda
+  ACCEPTED     // Restoran qabul qildi
+  PREPARING    // Tayyorlanmoqda
+  READY        // Kuryer uchun tayyor
+  ON_THE_WAY   // Kuryer olib, yo'lda
+  DELIVERED    // Yetkazildi
+  CANCELLED    // Bekor qilindi
+}
+
+enum CourierStatus {
+  OFFLINE
+  AVAILABLE
+  BUSY
+}
+
+// ─── USER ──────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      UserRole @default(CUSTOMER)
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  addresses      Address[]
+  orders         Order[]        @relation("CustomerOrders")
+  restaurant     Restaurant?
+  courierProfile Courier?
+  messages       Message[]
+  reviews        Review[]       @relation("CustomerReviews")
+  notifications  Notification[]
+
+  @@map("users")
+}
+
+// ─── ADDRESS ───────────────────────────────────────────────
+
+model Address {
+  id        String  @id @default(uuid())
+  userId    String
+  label     String
+  street    String
+  city      String
+  latitude  Float
+  longitude Float
+  isDefault Boolean @default(false)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ─── RESTAURANT ────────────────────────────────────────────
+
+model Restaurant {
+  id            String           @id @default(uuid())
+  ownerId       String           @unique
+  name          String
+  description   String?
+  address       String
+  latitude      Float
+  longitude     Float
+  phone         String
+  logo          String?
+  coverImage    String?
+  status        RestaurantStatus @default(CLOSED)
+  rating        Float            @default(0)
+  ratingCount   Int              @default(0)   // rating hisoblash uchun
+  totalOrders   Int              @default(0)
+  isVerified    Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  owner      User        @relation(fields: [ownerId], references: [id])
+  categories Category[]
+  menuItems  MenuItem[]
+  orders     Order[]
+  reviews    Review[]
+
+  @@map("restaurants")
+}
+
+// ─── CATEGORY ──────────────────────────────────────────────
+
+model Category {
+  id           String @id @default(uuid())
+  name         String
+  restaurantId String
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuItems  MenuItem[]
+
+  @@index([restaurantId])
+  @@map("categories")
+}
+
+// ─── MENU ITEM ─────────────────────────────────────────────
+
+model MenuItem {
+  id              String  @id @default(uuid())
+  restaurantId    String
+  categoryId      String?
+  name            String
+  description     String?
+  price           Float
+  image           String?
+  isAvailable     Boolean @default(true)
+  preparationTime Int     @default(15)
+
+  restaurant Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category   Category?   @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+
+  @@index([restaurantId, isAvailable])
+  @@map("menu_items")
+}
+
+// ─── ORDER ─────────────────────────────────────────────────
+
+model Order {
+  id            String      @id @default(uuid())
+  customerId    String
+  restaurantId  String
+  addressId     String
+  courierId     String?
+  status        OrderStatus @default(CONFIRMED)
+  totalAmount   Float
+  deliveryFee   Float       @default(0)
+  note          String?
+  estimatedTime Int?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  customer   User       @relation("CustomerOrders", fields: [customerId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  address    Address    @relation(fields: [addressId], references: [id])
+  courier    Courier?   @relation(fields: [courierId], references: [id])
+  items      OrderItem[]
+  messages   Message[]
+  reviews    Review[]
+
+  @@index([customerId, createdAt(sort: Desc)])
+  @@index([restaurantId, status])
+  @@index([courierId, status])
+  @@map("orders")
+}
+
+// ─── ORDER ITEM ────────────────────────────────────────────
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  price      Float   // Buyurtma vaqtidagi narx — menyu narxi o'zgansa ta'sir qilmaydi
+  note       String?
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ─── COURIER ───────────────────────────────────────────────
+
+model Courier {
+  id               String        @id @default(uuid())
+  userId           String        @unique
+  vehicleType      String        @default("bike")
+  status           CourierStatus @default(OFFLINE)
+  rating           Float         @default(0)
+  totalDeliveries  Int           @default(0)
+  // Joylashuv Redis da: courier:{userId}:location → {lat, lng, updatedAt}
+
+  user   User    @relation(fields: [userId], references: [id])
+  orders Order[]
+  reviews Review[]
+
+  @@map("couriers")
+}
+
+// ─── MESSAGE ───────────────────────────────────────────────
+
+model Message {
+  id        String   @id @default(uuid())
+  orderId   String
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender User  @relation(fields: [senderId], references: [id])
+
+  @@index([orderId, createdAt(sort: Desc)])
+  @@map("messages")
+}
+
+// ─── REVIEW ────────────────────────────────────────────────
+
+model Review {
+  id           String   @id @default(uuid())
+  orderId      String
+  customerId   String
+  restaurantId String?
+  courierId    String?
+  rating       Int      // 1-5
+  comment      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer   User        @relation("CustomerReviews", fields: [customerId], references: [id])
+  restaurant Restaurant? @relation(fields: [restaurantId], references: [id])
+  courier    Courier?    @relation(fields: [courierId], references: [id])
+
+  @@unique([orderId, restaurantId])
+  @@unique([orderId, courierId])
+  @@index([restaurantId])
+  @@index([courierId])
+  @@map("reviews")
+}
+
+// ─── NOTIFICATION ──────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // ORDER_STATUS, NEW_ORDER, PAYMENT, REVIEW
+  title     String
+  message   String
+  data      String?  // JSON string
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}

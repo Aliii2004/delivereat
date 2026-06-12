@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# Build
+.next/
+dist/
+
+# Environment
+.env
+
+# Docker
+*.log
+
+# OS
+.DS_Store

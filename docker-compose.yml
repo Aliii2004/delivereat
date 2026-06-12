@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  # ─── API GATEWAY ───────────────────────────────────────────
+  nginx:
+    build: ./nginx
+    container_name: delivereat_nginx
+    ports:
+      - '80:80'
+    depends_on:
+      - server1
+      - server2
+      - client
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ─── FRONTEND ──────────────────────────────────────────────
+  client:
+    build: ./client
+    container_name: delivereat_client
+    ports:
+      - '3000:3000'
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost/api
+      - NEXT_PUBLIC_GRAPHQL_URL=http://localhost/graphql
+      - NEXT_PUBLIC_SOCKET_URL=http://localhost
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ─── SERVER 1: Express + Socket.io ─────────────────────────
+  server1:
+    build: ./server1
+    container_name: delivereat_server1
+    ports:
+      - '4000:4000'
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db1:5432/${DB1_NAME}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - SERVER2_INTERNAL_URL=http://server2:8000
+      - CLIENT_URL=http://localhost
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+    depends_on:
+      db1:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ─── SERVER 2: FastAPI + GraphQL ───────────────────────────
+  server2:
+    build: ./server2
+    container_name: delivereat_server2
+    ports:
+      - '8000:8000'
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db2:5432/${DB2_NAME}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - SERVER1_INTERNAL_URL=http://server1:4000
+      - CLIENT_URL=http://localhost
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+    depends_on:
+      db2:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ─── DATABASE 1 ────────────────────────────────────────────
+  db1:
+    image: postgres:15-alpine
+    container_name: delivereat_db1
+    environment:
+      POSTGRES_DB:       ${DB1_NAME}
+      POSTGRES_USER:     ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db1_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── DATABASE 2 ────────────────────────────────────────────
+  db2:
+    image: postgres:15-alpine
+    container_name: delivereat_db2
+    environment:
+      POSTGRES_DB:       ${DB2_NAME}
+      POSTGRES_USER:     ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db2_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─── REDIS ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: delivereat_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+
+volumes:
+  db1_data:
+  db2_data:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge
