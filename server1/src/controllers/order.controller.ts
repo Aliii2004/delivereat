@@ -595,11 +595,15 @@ export const cancelOrder = async (
     }
 
     if (role !== 'ADMIN') {
-      if (role === 'CUSTOMER' && order.customerId !== userId) {
-        throw new AppError("Ruxsat yo'q", 403);
+      if (role === 'CUSTOMER') {
+        if (order.customerId !== userId) {
+          throw new AppError("Ruxsat yo'q", 403);
+        }
       } else if (role === 'RESTAURANT_OWNER') {
         await assertRestaurantOwner(order.restaurantId, userId);
-      } else if (role !== 'CUSTOMER') {
+      } else if (role === 'COURIER') {
+        throw new AppError("Kuryer buyurtmani bekor qila olmaydi", 403);
+      } else {
         throw new AppError("Ruxsat yo'q", 403);
       }
     }
