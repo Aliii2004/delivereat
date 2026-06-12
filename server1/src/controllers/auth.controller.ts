@@ -12,7 +12,7 @@ import {
 import { redisService } from '../services/redis.service';
 import { AppError } from '../middleware/errorHandler';
 
-const DUMMY_PASSWORD_HASH = '$2a$12$rr3gEVtbLa1FrdQFymjHX.o4.I5ZwfB4YxMBwzjTan63OAwd5gqWi';
+const DUMMY_PASSWORD_HASH = '$2b$12$rr3gEVtbLa1FrdQFymjHX.o4.I5ZwfB4YxMBwzjTan63OAwd5gqWi';
 
 const hashRefreshToken = (token: string): string =>
   crypto.createHash('sha256').update(token).digest('hex');
