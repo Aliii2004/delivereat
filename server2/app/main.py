@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # ─── STARTUP ENV VALIDATION ────────────────────────────────
 
-REQUIRED_ENV = ["DATABASE_URL", "REDIS_URL", "JWT_SECRET"]
+REQUIRED_ENV = ["DATABASE_URL", "REDIS_URL", "INTERNAL_API_SECRET"]
 
 def validate_env() -> None:
     missing = [k for k in REQUIRED_ENV if not os.environ.get(k)]

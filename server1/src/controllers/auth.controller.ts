@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import {
   generateAccessToken,
@@ -10,6 +11,11 @@ import {
 } from '../lib/jwt';
 import { redisService } from '../services/redis.service';
 import { AppError } from '../middleware/errorHandler';
+
+const DUMMY_PASSWORD_HASH = '$2b$12$rr3gEVtbLa1FrdQFymjHX.o4.I5ZwfB4YxMBwzjTan63OAwd5gqWi';
+
+const hashRefreshToken = (token: string): string =>
+  crypto.createHash('sha256').update(token).digest('hex');
 
 // ─── REGISTER ──────────────────────────────────────────────
 export const register = async (
@@ -56,7 +62,7 @@ export const register = async (
     const accessToken  = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    await redisService.set(`refresh:${user.id}`, refreshToken, 7 * 24 * 60 * 60);
+    await redisService.set(`refresh:${user.id}`, hashRefreshToken(refreshToken), 7 * 24 * 60 * 60);
 
     return res.status(201).json({ user, accessToken, refreshToken });
   } catch (error) {
@@ -79,7 +85,7 @@ export const login = async (
     if (!user || !user.isActive) {
       // Hash comparison qilmasdan qaytish timing attack uchun ochiq bo'ladi
       // Shu sababli dummy compare qilamiz
-      await bcrypt.compare(password, '$2b$12$dummyhashfordummycomparison000000000000');
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       throw new AppError("Email yoki parol noto'g'ri", 401);
     }
 
@@ -92,7 +98,7 @@ export const login = async (
     const accessToken  = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    await redisService.set(`refresh:${user.id}`, refreshToken, 7 * 24 * 60 * 60);
+    await redisService.set(`refresh:${user.id}`, hashRefreshToken(refreshToken), 7 * 24 * 60 * 60);
 
     return res.json({
       user: {
@@ -125,8 +131,18 @@ export const refreshToken = async (
     const payload = verifyRefreshToken(refreshToken);
 
     const stored = await redisService.get(`refresh:${payload.userId}`);
-    if (stored !== refreshToken) {
-      throw new AppError('Refresh token yaroqsiz', 401);
+    const hashedIncomingToken = hashRefreshToken(refreshToken);
+    if (stored !== hashedIncomingToken) {
+      if (stored !== refreshToken) {
+        throw new AppError('Refresh token yaroqsiz', 401);
+      }
+      // Legacy plain token saqlangan bo'lsa, bir martalik migratsiya qilib hash ko'rinishga o'tkazamiz
+      console.warn(`Legacy refresh token upgraded for user ${payload.userId}`);
+      await redisService.set(
+        `refresh:${payload.userId}`,
+        hashedIncomingToken,
+        7 * 24 * 60 * 60
+      );
     }
 
     const newPayload = {
@@ -137,7 +153,11 @@ export const refreshToken = async (
     const newAccessToken  = generateAccessToken(newPayload);
     const newRefreshToken = generateRefreshToken(newPayload);
 
-    await redisService.set(`refresh:${payload.userId}`, newRefreshToken, 7 * 24 * 60 * 60);
+    await redisService.set(
+      `refresh:${payload.userId}`,
+      hashRefreshToken(newRefreshToken),
+      7 * 24 * 60 * 60
+    );
 
     return res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
   } catch (error) {
