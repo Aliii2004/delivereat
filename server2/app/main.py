@@ -5,82 +5,74 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.graphql.schema import graphql_router
-from app.routers.internal import router as internal_router
+from app.config import settings
+from app.database import init_db
 from app.services.redis_subscriber import redis_subscriber
+from app.routers import internal, graphql_router
 
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-
-# ─── STARTUP ENV VALIDATION ────────────────────────────────
-
-REQUIRED_ENV = ["DATABASE_URL", "REDIS_URL", "INTERNAL_API_SECRET"]
-
-def validate_env() -> None:
-    missing = [k for k in REQUIRED_ENV if not os.environ.get(k)]
-    if missing:
-        raise RuntimeError(
-            f"Required environment variables missing: {', '.join(missing)}"
-        )
-
-
-# ─── LIFESPAN ──────────────────────────────────────────────
-# FastAPI startup/shutdown — @app.on_event deprecated
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # STARTUP
-    validate_env()
-    logger.info("Starting Server 2 (FastAPI + GraphQL)...")
-
-    await redis_subscriber.connect()
+    # Startup
+    logger.info("🚀 Server 2 starting up...")
+    
+    # Initialize database
+    await init_db()
+    logger.info("✓ Database initialized")
+    
+    # Connect to Redis
+    await redis_subscriber.connect(settings.REDIS_URL)
+    
+    # Start Redis subscriber
     redis_subscriber.start()
-    logger.info("✓ Redis subscriber started — listening on 'order.events'")
-
+    
     yield
-
-    # SHUTDOWN
-    logger.info("Shutting down Server 2...")
+    
+    # Shutdown
+    logger.info("🛑 Server 2 shutting down...")
     await redis_subscriber.disconnect()
-    logger.info("✓ Server 2 shutdown complete")
-
-
-# ─── APP ───────────────────────────────────────────────────
+    logger.info("✓ Shutdown complete")
 
 app = FastAPI(
     title="DeliverEat Analytics API",
-    description="Server 2 — FastAPI + Strawberry GraphQL + SQLAlchemy",
+    description="GraphQL Analytics & WebHooks for DeliverEat",
     version="1.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
-# ─── CORS ──────────────────────────────────────────────────
-
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("CLIENT_URL", "http://localhost:3000")],
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# ─── ROUTES ────────────────────────────────────────────────
+# Routes
+app.include_router(internal.router, prefix="/api")
+app.include_router(graphql_router.router, prefix="/graphql")
 
-app.include_router(internal_router)
-# app.include_router(graphql_router, prefix="")
-app.include_router(graphql_router, prefix="/graphql")
-
-# ─── HEALTH CHECK ──────────────────────────────────────────
-
+# Health check
 @app.get("/health")
-async def health() -> dict:
+async def health():
     return {
         "status": "ok",
         "service": "server2",
+        "environment": settings.ENV
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG
+    )
