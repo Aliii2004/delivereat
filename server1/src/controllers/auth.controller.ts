@@ -132,12 +132,16 @@ export const refreshToken = async (
 
     const stored = await redisService.get(`refresh:${payload.userId}`);
     const hashedIncomingToken = hashRefreshToken(refreshToken);
-    const isValidStoredToken =
-      stored === hashedIncomingToken ||
-      stored === refreshToken;
-
-    if (!isValidStoredToken) {
-      throw new AppError('Refresh token yaroqsiz', 401);
+    if (stored !== hashedIncomingToken) {
+      if (stored !== refreshToken) {
+        throw new AppError('Refresh token yaroqsiz', 401);
+      }
+      // Legacy plain token saqlangan bo'lsa, bir martalik migratsiya qilib hash ko'rinishga o'tkazamiz
+      await redisService.set(
+        `refresh:${payload.userId}`,
+        hashedIncomingToken,
+        7 * 24 * 60 * 60
+      );
     }
 
     const newPayload = {
