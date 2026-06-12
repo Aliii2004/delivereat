@@ -307,8 +307,7 @@ export const getOrder = async (
     if (!order) throw new AppError('Buyurtma topilmadi', 404);
 
     const isCustomer        = order.customerId === userId;
-    const isCourier         = role === 'COURIER' && order.courier?.user !== undefined &&
-                              order.courier !== null;
+    const isCourier         = role === 'COURIER' && order.courier?.userId === userId;
     const isRestaurantOwner = role === 'RESTAURANT_OWNER' &&
                               order.restaurant.ownerId === userId;
     const isAdmin           = role === 'ADMIN';
@@ -549,7 +548,7 @@ export const deliverOrder = async (
     await notifyOrderCompleted({
       orderId: updated.id,
       restaurantId: updated.restaurantId,
-      courierId: req.user!.userId,
+      courierId: courier.id,
       totalAmount: updated.totalAmount,
       deliveryTime,
     });
@@ -558,7 +557,7 @@ export const deliverOrder = async (
       type: 'order_delivered',
       orderId: updated.id,
       restaurantId: updated.restaurantId,
-      courierId: req.user!.userId,
+      courierId: courier.id,
       deliveryTime,
       timestamp: new Date().toISOString(),
     });
@@ -595,8 +594,16 @@ export const cancelOrder = async (
       );
     }
 
-    if (order.customerId !== userId && role !== 'ADMIN') {
-      throw new AppError("Ruxsat yo'q", 403);
+    if (role !== 'ADMIN') {
+      if (role === 'CUSTOMER' && order.customerId !== userId) {
+        throw new AppError("Ruxsat yo'q", 403);
+      }
+      if (role === 'RESTAURANT_OWNER') {
+        await assertRestaurantOwner(order.restaurantId, userId);
+      }
+      if (role !== 'CUSTOMER' && role !== 'RESTAURANT_OWNER') {
+        throw new AppError("Ruxsat yo'q", 403);
+      }
     }
 
     const updated = await updateOrderStatus(

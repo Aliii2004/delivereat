@@ -61,7 +61,7 @@ export const initSocket = (httpServer: HTTPServer): SocketServer => {
           where: { id: orderId },
           select: {
             customerId: true,
-            courierId: true,
+            courier: { select: { userId: true } },
             restaurant: { select: { ownerId: true } },
           },
         });
@@ -72,7 +72,7 @@ export const initSocket = (httpServer: HTTPServer): SocketServer => {
         }
 
         const isCustomer = order.customerId === user.userId;
-        const isCourier = order.courierId === user.userId;
+        const isCourier = order.courier?.userId === user.userId;
         const isRestaurantOwner = order.restaurant?.ownerId === user.userId;
         const isAdmin = user.role === 'ADMIN';
 
@@ -115,7 +115,7 @@ export const initSocket = (httpServer: HTTPServer): SocketServer => {
     });
 
     // ── Kuryer joylashuvini yangilash ───────────────────────
-    socket.on('courier:location', async (data: { lat: number; lng: number; orderId?: string }) => {
+    const handleCourierLocationUpdate = async (data: { lat: number; lng: number; orderId?: string }) => {
       if (user.role !== 'COURIER') return;
 
       // Koordinatlar validatsiyasi
@@ -134,6 +134,19 @@ export const initSocket = (httpServer: HTTPServer): SocketServer => {
       await redisService.setCourierLocation(user.userId, lat, lng);
 
       if (data.orderId) {
+        const assignedOrder = await prisma.order.findFirst({
+          where: {
+            id: data.orderId,
+            courier: { userId: user.userId },
+          },
+          select: { id: true },
+        });
+
+        if (!assignedOrder) {
+          socket.emit('error', { message: 'Bu buyurtmaga joylashuv yuborishga ruxsat yo\'q' });
+          return;
+        }
+
         socket.to(`order:${data.orderId}`).emit('courier:moved', {
           lat,
           lng,
@@ -149,7 +162,10 @@ export const initSocket = (httpServer: HTTPServer): SocketServer => {
         lng,
         timestamp: new Date().toISOString(),
       });
-    });
+    };
+
+    socket.on('courier:location', handleCourierLocationUpdate);
+    socket.on('courier:update-location', handleCourierLocationUpdate);
 
     // ── Disconnect ──────────────────────────────────────────
     socket.on('disconnect', () => {

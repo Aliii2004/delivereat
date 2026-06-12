@@ -26,6 +26,10 @@ function validateEnv() {
     console.error('✗ JWT_SECRET kamida 32 belgi bo\'lishi kerak');
     process.exit(1);
   }
+  if ((process.env.JWT_REFRESH_SECRET?.length ?? 0) < 32) {
+    console.error('✗ JWT_REFRESH_SECRET kamida 32 belgi bo\'lishi kerak');
+    process.exit(1);
+  }
 }
 
 validateEnv();
